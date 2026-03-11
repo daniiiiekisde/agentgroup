@@ -1,4 +1,4 @@
-"""AgentGroup Discussion v2 – turn-based, org-sorted, threaded HTML output."""
+"""AgentGroup Discussion v3 – persona-aware, threaded, org-sorted."""
 from __future__ import annotations
 import re, time
 from typing import List, Optional, Callable
@@ -23,6 +23,19 @@ def _sort_agents(agents: List[Agent]) -> List[Agent]:
     return sorted(agents, key=rank)
 
 
+def format_agent_message(agent: Agent, text: str, reply_to: Optional[str] = None) -> str:
+    """Prepend persona signature or threaded reply prefix to a message."""
+    if reply_to:
+        prefix = agent.persona.render_reply_prefix(reply_to)
+    else:
+        prefix = agent.persona.render_signature_prefix()
+
+    catchphrase = (agent.persona.linguistics.catchphrase or "").strip()
+    if catchphrase:
+        return f"{prefix} {text}\n\n_{catchphrase}_"
+    return f"{prefix} {text}"
+
+
 def _bubble_html(
     agent: Agent,
     text: str,
@@ -38,14 +51,31 @@ def _bubble_html(
         cls = "vote-approve" if "APPROVE" in vote.upper() else "vote-reject"
         vote_html = f"<div class='vote'><span class='{cls}'>{vote}</span></div>"
     cls = "ag-msg reply" if is_reply else "ag-msg"
+
+    # Catchphrase badge
+    catchphrase = (agent.persona.linguistics.catchphrase or "").strip()
+    cp_html = ""
+    if catchphrase:
+        cp_html = f"<div class='catchphrase'>💬 {catchphrase}</div>"
+
+    # Tone / verbosity badges
+    tone      = agent.persona.linguistics.tone
+    verbosity = agent.persona.linguistics.verbosity
+    badges_html = (
+        f"<span class='persona-badge'>{tone}</span>"
+        f"<span class='persona-badge'>{verbosity}</span>"
+    )
+
     return (
-        f"<div class='{cls}'>"  
+        f"<div class='{cls}'>"
         f"  <div class='ag-avatar'>{agent.emoji}</div>"
         f"  <div class='ag-bubble'>"
         f"    <div class='sender'>{agent.name}"
-        f"      <span class='role-tag'>{agent.position}</span></div>"
+        f"      <span class='role-tag'>{agent.position}</span>"
+        f"      {badges_html}</div>"
         f"    {reply_html}"
         f"    <div class='body'>{text}</div>"
+        f"    {cp_html}"
         f"    {vote_html}"
         f"  </div>"
         f"</div>"
@@ -64,10 +94,10 @@ class Discussion:
         telegram: Optional[TelegramRelay] = None,
         log_callback: Optional[Callable[[str], None]] = None,
     ):
-        self.agents   = _sort_agents(agents)  # org-chart order
-        self.gh       = github_ops
-        self.tg       = telegram
-        self.log      = log_callback or print
+        self.agents = _sort_agents(agents)
+        self.gh     = github_ops
+        self.tg     = telegram
+        self.log    = log_callback or print
         self.html_parts: List[str] = []
         self.log_lines: List[str]  = []
 
@@ -106,6 +136,18 @@ class Discussion:
                 result.append(line)
         return "".join(result) if result else original
 
+    def _detect_reply_target(self, response: str, proposals: list) -> Optional[str]:
+        """Detect which agent is being replied to using persona reply prefix patterns."""
+        # Try persona-aware pattern first: "<name> responde a <other>:"
+        m = re.search(r"responde a (\w+):", response, re.IGNORECASE)
+        if m:
+            return m.group(1)
+        # Fallback: legacy "Replying to <Name>:"
+        m2 = re.search(r"Replying to (\w+):", response)
+        if m2:
+            return m2.group(1)
+        return None
+
     # ────────────────────────────────────────────────
     # Main run
     # ────────────────────────────────────────────────
@@ -135,7 +177,7 @@ class Discussion:
         conversation_context = f"Task: {task}\n\nFiles:\n{context_block}"
         proposals = []
 
-        for i, agent in enumerate(self.agents):
+        for agent in self.agents:
             prior_summaries = ""
             if proposals:
                 prior_summaries = "Previous agents said:\n" + "\n".join(
@@ -146,40 +188,45 @@ class Discussion:
             self._log(f"\n🤖 {agent.name} ({agent.position}) is thinking…")
             response = agent.say(prompt)
 
-            # Detect if replying to a previous agent
+            # Detect threading
+            reply_to_name = self._detect_reply_target(response, proposals)
             reply_to_text = None
-            reply_match = re.search(r"Replying to (\w+):\s*(.{0,120})", response)
-            if reply_match and proposals:
-                mentioned = reply_match.group(1)
-                snippet   = reply_match.group(2)
-                reply_to_text = f"{mentioned}: "{snippet}…""
+            if reply_to_name and proposals:
+                matching = [p for p in proposals if p['agent'].name.lower() == reply_to_name.lower()]
+                if matching:
+                    snippet = matching[-1]['text'][:120]
+                    reply_to_text = f"{reply_to_name}: \"{snippet}…\""
 
             is_reply = reply_to_text is not None
-            self._add_bubble(agent, response, reply_to=reply_to_text, is_reply=is_reply)
-            self._log(f"{agent.name}: {response[:400]}")
+
+            # Format message with persona signature
+            formatted = format_agent_message(agent, response, reply_to=reply_to_name)
+            self._add_bubble(agent, formatted, reply_to=reply_to_text, is_reply=is_reply)
+            self._log(f"{agent.persona.render_signature_prefix()} {response[:400]}")
             proposals.append({"agent": agent, "text": response})
 
-        # 3. Voting round (each agent votes on ALL others' proposals)
+        # 3. Voting round
         self.html_parts.append(_divider("🗳️ Round 2 — Voting"))
         approved_changes = []
 
         for prop in proposals:
-            proposer  = prop["agent"]
-            voters    = [a for a in self.agents if a is not proposer]
+            proposer = prop["agent"]
+            voters   = [a for a in self.agents if a is not proposer]
             if not voters:
                 continue
 
             vote_prompt = (
-                f"{proposer.name} proposed:\n{prop['text']}\n\n"
+                f"{proposer.persona.render_signature_prefix()} proposed:\n{prop['text']}\n\n"
                 "Vote APPROVE or REJECT: <reason>. "
-                "Also mention how this change might affect the rest of the codebase."
+                "Mention how this change might affect the rest of the codebase."
             )
             votes = []
             for voter in voters:
                 vote_text = voter.say(vote_prompt, context=f"Proposal by {proposer.name}")
                 vote_str  = self._extract_vote(vote_text)
-                self._add_bubble(voter, vote_text, reply_to=f"{proposer.name}'s proposal", vote=vote_str, is_reply=True)
-                self._log(f"🗳️ {voter.name} → {vote_str}")
+                formatted_vote = format_agent_message(voter, vote_text, reply_to=proposer.name)
+                self._add_bubble(voter, formatted_vote, reply_to=f"{proposer.name}'s proposal", vote=vote_str, is_reply=True)
+                self._log(f"🗳️ {voter.persona.render_signature_prefix()} → {vote_str}")
                 votes.append(vote_text)
 
             if self._majority_approved(votes):
@@ -216,7 +263,7 @@ class Discussion:
                 f"- **{c['proposer']}**: `{c['file_path']}`" for c in approved_changes
             )
             try:
-                pr   = self.gh.create_pull_request("[AgentGroup] Collaborative improvements", body, branch)
+                pr    = self.gh.create_pull_request("[AgentGroup] Collaborative improvements", body, branch)
                 pr_url = pr.get("html_url", "")
                 self._log(f"🚀 PR: {pr_url}")
                 self.html_parts.append(_divider(f"🚀 PR opened: {pr_url}"))

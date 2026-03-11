@@ -1,7 +1,8 @@
-"""AgentGroup Agent v2 – org-position aware."""
+"""AgentGroup Agent v3 – persona-aware, org-position aware."""
 from __future__ import annotations
 from typing import List, Dict, Optional
 from core.models import ModelAdapter
+from core.persona import PersonaProfile
 
 ROLE_EMOJIS = {
     "Tech Lead / Architect":           "🏛️",
@@ -14,30 +15,41 @@ ROLE_EMOJIS = {
 
 
 class Agent:
-    def __init__(self, name: str, role: str, adapter: ModelAdapter, position: str = "Software Engineer"):
+    def __init__(
+        self,
+        name: str,
+        role: str,
+        adapter: ModelAdapter,
+        position: str = "Software Engineer",
+        persona: Optional[PersonaProfile] = None,
+    ):
         self.name     = name
         self.role     = role
         self.position = position
         self.emoji    = ROLE_EMOJIS.get(position, "🤖")
         self.adapter  = adapter
+        self.persona  = persona or PersonaProfile()
+        # Keep persona identity in sync with the agent name/position
+        self.persona.identity.name      = name
+        self.persona.identity.job_title = position
         self.history: List[Dict[str, str]] = []
 
     def system_prompt(self) -> str:
+        persona_block = self.persona.prompt_block()
         return (
-            f"You are {self.name}, {self.emoji} {self.position} ({self.role}) in an AI engineering team.\n"
-            "The team works in org-chart order: Tech Lead → Senior Engineer → Engineers → Specialists.\n"
-            "Your role affects HOW you respond:\n"
-            "  - Tech Lead: high-level architecture decisions, final approval authority.\n"
-            "  - Senior SW Engineer: implementation details, API design, patterns.\n"
-            "  - SW Engineer: concrete code fixes, bug patches.\n"
-            "  - UI/UX Engineer: user experience, accessibility, frontend code.\n"
-            "  - Security Reviewer: vulnerabilities, input validation, secrets management.\n"
-            "  - DevOps Engineer: CI/CD, Docker, performance, scaling.\n"
-            "Rules:\n"
-            "1. When proposing code changes, use ```diff blocks.\n"
-            "2. When replying to a colleague mention their name: 'Replying to <Name>: ...'.\n"
-            "3. Explicitly state how your change might AFFECT other areas of the codebase.\n"
-            "4. End with APPROVE, REJECT: <reason>, or DEFER TO <Role>.\n"
+            f"You are {self.name}, {self.emoji} {self.position} ({self.role}) "
+            "in a collaborative AI engineering team.\n"
+            "The team works in org-chart order: Tech Lead → Senior Engineer → Engineers → Specialists.\n\n"
+            "== YOUR PERSONA ==\n"
+            f"{persona_block}\n\n"
+            "== RULES ==\n"
+            "1. Speak strictly in character according to your persona.\n"
+            "2. Use your configured signature prefix naturally (e.g. 'Claude dice:').\n"
+            "3. When replying to another agent use the reply prefix pattern "
+            "(e.g. 'Claude responde a Gemini:').\n"
+            "4. When proposing code changes, use ```diff blocks.\n"
+            "5. Explicitly describe how your change affects OTHER areas of the codebase.\n"
+            "6. End with APPROVE, REJECT: <reason>, or DEFER.\n"
             "Be concise (max 300 words per turn)."
         )
 
