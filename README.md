@@ -1,63 +1,72 @@
-# 🤖 AgentGroup
+# 🤖 AgentGroup v2
 
-A multi-AI collaborative framework where multiple AI agents can **edit a shared GitHub repository** and **discuss optimizations and improvements** amongst themselves.
+**Multi-AI Collaborative GitHub Editor** — turn-based, org-hierarchy aware, threaded discussion, Telegram notifications.
 
 ## Features
 
-- 🧠 **Multi-model support**: OpenAI, Anthropic, Gemini, Groq, Ollama (local & cloud)
-- 🐙 **GitHub integration**: Agents can read, create, edit, and commit files via GitHub API
-- 💬 **Agent discussion**: Agents debate proposed changes before committing
-- 🔑 **Flexible auth**: GitHub token + any model API key or Ollama cloud key
-- 🌐 **Web UI**: Simple Gradio interface to configure and launch agent sessions
+- 👥 **2–6 agents** with configurable org positions
+- 🏛️ **Org-chart turn order**: Tech Lead → Senior Engineer → Engineers → Specialists
+- 💬 **Threaded replies**: *"Replying to Alice: …"* with visible reply context
+- 🔗 **Cascading awareness**: each agent sees what previous agents said before responding
+- 🗳️ **Voting round**: all agents vote on each proposal; majority wins
+- 📝 **Auto PR**: approved diffs committed to a new branch and a PR opened automatically
+- 📱 **Telegram**: real-time forwarding of the whole discussion to a bot chat
+- 🎨 **Rich dark UI**: chat bubbles, role badges, vote indicators, dividers
+
+## Org Positions
+
+| Position | Emoji | Focus |
+|---|---|---|
+| Tech Lead / Architect | 🏛️ | Architecture, final decisions |
+| Senior Software Engineer | 🧠 | Implementation, patterns |
+| Software Engineer | 💻 | Bug fixes, code quality |
+| UI/UX Engineer | 🎨 | Frontend, accessibility |
+| Security Reviewer | 🔒 | Vulnerabilities, hardening |
+| DevOps / Performance Engineer | ⚙️ | CI/CD, Docker, performance |
 
 ## Quick Start
 
 ```bash
+git clone https://github.com/daniiiiekisde/agentgroup
+cd agentgroup
 pip install -r requirements.txt
+cp .env.example .env   # fill your keys
 python app.py
+# → http://localhost:7860
 ```
 
-Then open `http://localhost:7860` in your browser.
+## Telegram Setup
 
-## Configuration
+1. Create a bot via [@BotFather](https://t.me/BotFather) → copy token
+2. Get your Chat ID via [@userinfobot](https://t.me/userinfobot)
+3. Paste both in the **Telegram Notifications** section of the UI (or in `.env`)
 
-Copy `.env.example` to `.env` and fill in your keys:
+## Discussion Flow
 
-```bash
-cp .env.example .env
 ```
-
-| Variable | Description |
-|---|---|
-| `GITHUB_TOKEN` | Personal Access Token with `repo` scope |
-| `OPENAI_API_KEY` | OpenAI API key (optional) |
-| `ANTHROPIC_API_KEY` | Anthropic Claude API key (optional) |
-| `GEMINI_API_KEY` | Google Gemini API key (optional) |
-| `GROQ_API_KEY` | Groq API key (optional) |
-| `OLLAMA_API_KEY` | Ollama cloud API key (optional) |
-| `OLLAMA_BASE_URL` | Ollama base URL (default: `https://ollama.com/api` for cloud, `http://localhost:11434` for local) |
-
-At least one model key is required. `GITHUB_TOKEN` is always required.
-
-## How It Works
-
-1. You provide a GitHub repo URL and your token.
-2. You configure 2+ AI agents, each with a role (e.g., "Senior Python Dev", "Security Reviewer").
-3. AgentGroup fetches the repo structure and selected files.
-4. Agents take turns proposing improvements, discussing them, and voting.
-5. Approved changes are committed to the repo automatically.
+[Repo files loaded]
+       ↓
+ Round 1 – Proposals (org order, each agent sees prior messages)
+   🏛️ Alice (Tech Lead)  →  proposes architecture change
+   🧠 Bob (Sr Engineer)  →  Replying to Alice: agrees + adds impl detail
+   🎨 Clara (UI/UX)      →  Replying to Bob: flags accessibility impact
+       ↓
+ Round 2 – Voting (each agent votes on each other's proposal)
+   Approved diffs → new branch → Pull Request
+```
 
 ## Architecture
 
 ```
 agentgroup/
-├── app.py              # Gradio web UI entry point
-├── core/
-│   ├── agent.py        # Agent class (model-agnostic)
-│   ├── discussion.py   # Multi-agent discussion orchestrator
-│   ├── github_ops.py   # GitHub API operations
-│   └── models.py       # Model provider adapters
-├── config.py           # Config & env loading
+├── app.py               # Gradio UI
+├── config.py            # Env config
 ├── requirements.txt
-└── .env.example
+├── .env.example
+└── core/
+    ├── agent.py         # Agent class (org-aware)
+    ├── discussion.py    # Turn-based orchestrator
+    ├── github_ops.py    # GitHub REST API
+    ├── models.py        # Provider adapters
+    └── telegram_bot.py  # Telegram relay
 ```
