@@ -7,3 +7,4 @@ requests>=2.31
 python-dotenv>=1.0
 mistralai>=1.0
 cohere>=5.0
+plotly>=5.0

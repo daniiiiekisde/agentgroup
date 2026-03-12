@@ -1,14 +1,16 @@
-"""AgentGroup v4 – Orchestrator-connected Gradio UI.
+"""AgentGroup v5 – UI Overhaul: glassmorphism, animated avatars, glow effects, responsive.
 
-New in v4:
-- Mode selector: DISCUSS / PLAN / AUTONOMOUS
-- Session memory: persistent across tabs, saveable to JSON
-- New providers in UI: DeepSeek, Mistral, xAI, Cohere
-- Agent presets auto-wired to new agents (DeepSeek, Mistral)
-- Tools panel: shows available tools + toggle
-- Session export: download chat HTML + log
-- Org-chart live preview
-- Stop button (graceful via gr.State flag)
+New in v5 UI:
+- Glassmorphism header + tabs
+- Animated gradient avatars with glow ring per role
+- Slide-in animation per chat message
+- Live status badges (THINKING / DONE / ERROR)
+- Role-color coding across all UI components
+- Responsive sidebar org-chart
+- Dark neon accent palette
+- Improved scrollbar and typography (Inter)
+- Sticky header with session info
+- Pulse animation on Run button
 """
 from __future__ import annotations
 import json, time
@@ -54,6 +56,16 @@ ROLE_EMOJIS = {
     "UI/UX Engineer":                  "🎨",
     "Security Reviewer":               "🔒",
     "DevOps / Performance Engineer":   "⚙️",
+}
+
+# Role → neon accent color
+ROLE_COLORS = {
+    "Tech Lead / Architect":           "#a78bfa",  # purple
+    "Senior Software Engineer":        "#60a5fa",  # blue
+    "Software Engineer":               "#34d399",  # green
+    "UI/UX Engineer":                  "#f472b6",  # pink
+    "Security Reviewer":               "#f87171",  # red
+    "DevOps / Performance Engineer":   "#fbbf24",  # amber
 }
 
 PRESET_DIR = Path("agents")
@@ -180,7 +192,7 @@ def run_session(
     ]
     agents, errors = [], []
     for s in slots:
-        if s[0] and s[2]:  # name + provider
+        if s[0] and s[2]:
             try:
                 agents.append(build_agent_from_ui(*s))
             except Exception as e:
@@ -203,7 +215,6 @@ def run_session(
     gh = GitHubOps(token=github_token or config.github_token, owner=owner, repo=repo)
     tg = TelegramRelay(tg_token, tg_chat_id) if (tg_token and tg_chat_id) else None
 
-    # Memory
     mem_path = MEMORY_DIR / f"{session_name or 'default'}.json"
     if load_memory_toggle and mem_path.exists():
         try:
@@ -223,7 +234,6 @@ def run_session(
                           memory=memory, telegram=tg, max_rounds=max_rounds)
     result = orch.run(file_paths=file_paths, task=task)
 
-    # Save memory
     try:
         memory.save(mem_path)
         mem_status = f"✅ Memory saved to {mem_path}"
@@ -234,13 +244,12 @@ def run_session(
     log_text   = "\n".join(result["log"])
     pr_link    = result.get("pr_url") or "No PR created."
 
-    # Export files
     export_html_path = f"/tmp/agentgroup_chat_{int(time.time())}.html"
     export_log_path  = f"/tmp/agentgroup_log_{int(time.time())}.txt"
     try:
         Path(export_html_path).write_text(
             f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>AgentGroup Session</title>"
-            f"<style>body{{background:#0f1117;color:#e6edf3;font-family:Inter,sans-serif;padding:24px}}</style></head>"
+            f"<style>body{{background:#050709;color:#e6edf3;font-family:Inter,sans-serif;padding:24px}}</style></head>"
             f"<body>{chat_html}</body></html>"
         )
         Path(export_log_path).write_text(log_text)
@@ -251,94 +260,487 @@ def run_session(
     return chat_html, log_text + "\n" + mem_status, pr_link, export_html_path, export_log_path
 
 
-# ── CSS ──────────────────────────────────────────────
+# ── CSS v5: Full UI Overhaul ──────────────────────────────────────────────
 
 CSS = """
-/* ── Chat area ───────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Global reset & base ─────────────────────────────── */
+* { box-sizing: border-box; }
+
+.gradio-container {
+  background: #050709 !important;
+  font-family: 'Inter', sans-serif !important;
+  min-height: 100vh;
+}
+
+/* ── Animated gradient background ───────────────────── */
+.gradio-container::before {
+  content: '';
+  position: fixed;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: radial-gradient(ellipse at 20% 20%, rgba(88,70,180,0.12) 0%, transparent 50%),
+              radial-gradient(ellipse at 80% 80%, rgba(16,185,129,0.08) 0%, transparent 50%),
+              radial-gradient(ellipse at 50% 50%, rgba(59,130,246,0.06) 0%, transparent 60%);
+  animation: bgPulse 12s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes bgPulse {
+  0%   { transform: translate(0,0) rotate(0deg); }
+  100% { transform: translate(2%,2%) rotate(3deg); }
+}
+
+/* ── Glassmorphism header ────────────────────────────── */
+.ag-header {
+  background: rgba(13,17,23,0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+  padding: 20px 28px;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+.ag-header::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(168,139,250,0.6), rgba(96,165,250,0.6), transparent);
+}
+
+/* ── Tab styling ─────────────────────────────────────── */
+.tabs > .tab-nav {
+  background: rgba(13,17,23,0.6) !important;
+  backdrop-filter: blur(10px) !important;
+  border-radius: 12px !important;
+  padding: 4px !important;
+  border: 1px solid rgba(255,255,255,0.05) !important;
+  gap: 4px !important;
+}
+.tabs > .tab-nav > button {
+  border-radius: 8px !important;
+  color: #7d8590 !important;
+  font-weight: 500 !important;
+  font-size: .85rem !important;
+  transition: all .2s ease !important;
+  border: none !important;
+  background: transparent !important;
+  padding: 8px 16px !important;
+}
+.tabs > .tab-nav > button.selected {
+  background: rgba(88,70,180,0.25) !important;
+  color: #a78bfa !important;
+  box-shadow: 0 0 12px rgba(167,139,250,0.2) !important;
+}
+.tabs > .tab-nav > button:hover:not(.selected) {
+  background: rgba(255,255,255,0.05) !important;
+  color: #e6edf3 !important;
+}
+
+/* ── Input fields ─────────────────────────────────────── */
+input, textarea, select {
+  background: rgba(22,27,34,0.8) !important;
+  border: 1px solid rgba(48,54,61,0.8) !important;
+  color: #e6edf3 !important;
+  border-radius: 8px !important;
+  font-family: 'Inter', sans-serif !important;
+  transition: border-color .2s, box-shadow .2s !important;
+}
+input:focus, textarea:focus {
+  border-color: rgba(88,70,180,0.6) !important;
+  box-shadow: 0 0 0 3px rgba(88,70,180,0.12) !important;
+  outline: none !important;
+}
+label {
+  color: #8b949e !important;
+  font-size: .8rem !important;
+  font-weight: 500 !important;
+  letter-spacing: .03em !important;
+  text-transform: uppercase !important;
+}
+
+/* ── Accordion ────────────────────────────────────────── */
+.gr-accordion {
+  background: rgba(13,17,23,0.5) !important;
+  border: 1px solid rgba(48,54,61,0.6) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+.gr-accordion > .label-wrap {
+  background: rgba(22,27,34,0.6) !important;
+  padding: 12px 16px !important;
+  font-weight: 600 !important;
+  color: #c9d1d9 !important;
+  letter-spacing: .02em;
+}
+
+/* ── Buttons ─────────────────────────────────────────── */
+button.primary {
+  background: linear-gradient(135deg, #5b21b6, #3b82f6) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  padding: 12px 28px !important;
+  cursor: pointer !important;
+  position: relative !important;
+  overflow: hidden !important;
+  transition: transform .15s, box-shadow .15s !important;
+  box-shadow: 0 4px 20px rgba(91,33,182,0.4) !important;
+}
+button.primary::before {
+  content: '';
+  position: absolute;
+  top: -50%; left: -60%;
+  width: 40%; height: 200%;
+  background: rgba(255,255,255,0.15);
+  transform: skewX(-20deg);
+  animation: btnShine 3s ease-in-out infinite;
+}
+@keyframes btnShine {
+  0%   { left: -60%; }
+  60%  { left: 130%; }
+  100% { left: 130%; }
+}
+button.primary:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 28px rgba(91,33,182,0.55) !important;
+}
+button.primary:active { transform: translateY(0) !important; }
+
+button.secondary {
+  background: rgba(30,37,46,0.8) !important;
+  border: 1px solid rgba(48,54,61,0.8) !important;
+  border-radius: 8px !important;
+  color: #8b949e !important;
+  font-size: .82rem !important;
+  transition: all .2s !important;
+}
+button.secondary:hover {
+  border-color: rgba(88,70,180,0.5) !important;
+  color: #a78bfa !important;
+}
+
+/* ── Sliders ─────────────────────────────────────────── */
+.gr-slider input[type=range] {
+  accent-color: #7c3aed !important;
+}
+
+/* ── Radio buttons ───────────────────────────────────── */
+.gr-radio-group label {
+  background: rgba(22,27,34,0.6) !important;
+  border: 1px solid rgba(48,54,61,0.6) !important;
+  border-radius: 8px !important;
+  padding: 8px 14px !important;
+  color: #8b949e !important;
+  transition: all .2s !important;
+  text-transform: none !important;
+  font-size: .85rem !important;
+}
+.gr-radio-group label:has(input:checked) {
+  background: rgba(88,70,180,0.2) !important;
+  border-color: rgba(167,139,250,0.5) !important;
+  color: #a78bfa !important;
+}
+
+/* ── Chat area ───────────────────────────────────────── */
 .ag-chat {
-  background:#0f1117; border-radius:12px; padding:16px;
-  max-height:620px; overflow-y:auto; font-family:'Inter',sans-serif;
-  scrollbar-width:thin; scrollbar-color:#3d444d #0f1117;
+  background: rgba(5,7,9,0.95);
+  border-radius: 16px;
+  padding: 20px;
+  max-height: 680px;
+  overflow-y: auto;
+  font-family: 'Inter', sans-serif;
+  border: 1px solid rgba(48,54,61,0.5);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(88,70,180,0.4) transparent;
+  position: relative;
 }
-.ag-msg  { display:flex; gap:10px; margin-bottom:16px; }
-.ag-msg.reply { margin-left:52px; border-left:3px solid #3d444d; padding-left:10px; }
+.ag-chat::-webkit-scrollbar { width: 4px; }
+.ag-chat::-webkit-scrollbar-track { background: transparent; }
+.ag-chat::-webkit-scrollbar-thumb {
+  background: rgba(88,70,180,0.4);
+  border-radius: 2px;
+}
+
+/* ── Message slide-in ────────────────────────────────── */
+.ag-msg {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  animation: msgSlideIn .35s cubic-bezier(.22,.68,0,1.2) both;
+}
+@keyframes msgSlideIn {
+  from { opacity: 0; transform: translateY(14px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+.ag-msg.reply {
+  margin-left: 56px;
+  border-left: 2px solid rgba(88,70,180,0.3);
+  padding-left: 14px;
+}
+
+/* ── Animated avatar with glow ───────────────────────── */
 .ag-avatar {
-  width:38px; height:38px; border-radius:50%;
-  display:flex; align-items:center; justify-content:center;
-  font-size:20px; flex-shrink:0;
-  background:linear-gradient(135deg,#21262d,#30363d);
-  box-shadow:0 0 0 2px #3d444d;
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; flex-shrink: 0;
+  background: linear-gradient(135deg, #1a1f2e, #2d3748);
+  position: relative;
+  transition: transform .2s;
 }
+.ag-avatar::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: conic-gradient(var(--role-color, #7c3aed), transparent 60%, var(--role-color, #7c3aed));
+  animation: avatarSpin 4s linear infinite;
+  z-index: -1;
+}
+.ag-avatar::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--role-color, #7c3aed) 0%, transparent 70%);
+  opacity: 0.2;
+  animation: avatarGlow 2s ease-in-out infinite alternate;
+}
+@keyframes avatarSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes avatarGlow {
+  from { opacity: 0.1; transform: scale(1); }
+  to   { opacity: 0.35; transform: scale(1.15); }
+}
+.ag-msg:hover .ag-avatar { transform: scale(1.08); }
+
+/* ── Message bubble ──────────────────────────────────── */
 .ag-bubble {
-  background:#161b22; border:1px solid #30363d;
-  border-radius:12px; padding:12px 16px;
-  max-width:700px; color:#e6edf3;
-  box-shadow:0 2px 8px rgba(0,0,0,.3);
-  transition:border-color .2s;
+  background: rgba(22,27,34,0.7);
+  border: 1px solid rgba(48,54,61,0.6);
+  backdrop-filter: blur(8px);
+  border-radius: 14px;
+  padding: 14px 18px;
+  max-width: 720px;
+  color: #e6edf3;
+  transition: border-color .25s, box-shadow .25s, transform .15s;
+  position: relative;
+  overflow: hidden;
 }
-.ag-bubble:hover { border-color:#58a6ff44; }
-.ag-bubble .sender { font-weight:700; font-size:.86rem; margin-bottom:5px; color:#58a6ff; }
+.ag-bubble::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--role-color, #7c3aed), transparent);
+  opacity: 0.4;
+}
+.ag-bubble:hover {
+  border-color: rgba(var(--role-color-rgb, 124,58,237), 0.35);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(var(--role-color-rgb, 124,58,237), 0.15);
+  transform: translateY(-1px);
+}
+.ag-bubble .sender {
+  font-weight: 700;
+  font-size: .88rem;
+  margin-bottom: 6px;
+  color: var(--role-color, #a78bfa);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .ag-bubble .role-tag {
-  font-size:.70rem; color:#7d8590;
-  background:#21262d; border-radius:4px;
-  padding:2px 7px; margin-left:7px;
+  font-size: .68rem;
+  color: #7d8590;
+  background: rgba(33,38,45,0.8);
+  border: 1px solid rgba(48,54,61,0.6);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-weight: 400;
+  letter-spacing: .04em;
 }
 .ag-bubble .reply-to {
-  font-size:.77rem; color:#7d8590; margin-bottom:7px;
-  border-left:3px solid #3d444d; padding-left:8px;
-  background:#0f1117; border-radius:0 4px 4px 0; padding:4px 8px;
+  font-size: .78rem;
+  color: #7d8590;
+  margin-bottom: 9px;
+  border-left: 3px solid rgba(88,70,180,0.5);
+  padding: 4px 10px;
+  background: rgba(10,13,18,0.5);
+  border-radius: 0 6px 6px 0;
 }
-.ag-bubble .body { font-size:.87rem; line-height:1.6; white-space:pre-wrap; }
-.ag-bubble .vote { margin-top:8px; font-size:.82rem; }
-.vote-approve { color:#3fb950; font-weight:700; }
-.vote-reject  { color:#f85149; font-weight:700; }
+.ag-bubble .body {
+  font-size: .88rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  color: #cdd5de;
+}
+.ag-bubble .vote { margin-top: 10px; font-size: .82rem; }
+.vote-approve { color: #3fb950; font-weight: 700; }
+.vote-reject  { color: #f85149; font-weight: 700; }
+
+/* ── Status badge ────────────────────────────────────── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .72rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.status-thinking {
+  background: rgba(251,191,36,0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251,191,36,0.25);
+  animation: thinkingPulse 1.2s ease-in-out infinite;
+}
+@keyframes thinkingPulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: .5; }
+}
+.status-done {
+  background: rgba(63,185,80,0.12);
+  color: #3fb950;
+  border: 1px solid rgba(63,185,80,0.25);
+}
+.status-error {
+  background: rgba(248,81,73,0.12);
+  color: #f85149;
+  border: 1px solid rgba(248,81,73,0.25);
+}
+
+/* ── Round divider ───────────────────────────────────── */
 .ag-divider {
-  text-align:center; color:#484f58; font-size:.76rem;
-  margin:12px 0; padding:4px 0;
-  border-top:1px solid #21262d;
-  letter-spacing:.05em; text-transform:uppercase;
+  text-align: center;
+  color: #484f58;
+  font-size: .74rem;
+  margin: 16px 0;
+  padding: 6px 0;
+  border-top: 1px solid rgba(33,38,45,0.8);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  position: relative;
 }
+.ag-divider::before, .ag-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 30%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(88,70,180,0.3));
+}
+.ag-divider::before { left: 5%; }
+.ag-divider::after  { right: 5%; transform: scaleX(-1); }
+
+/* ── Catchphrase ─────────────────────────────────────── */
 .catchphrase {
-  font-size:.74rem; color:#8b949e;
-  font-style:italic; margin-top:7px;
-  padding-top:5px; border-top:1px dashed #30363d;
+  font-size: .74rem;
+  color: #8b949e;
+  font-style: italic;
+  margin-top: 9px;
+  padding-top: 7px;
+  border-top: 1px dashed rgba(48,54,61,0.6);
+  font-family: 'JetBrains Mono', monospace;
 }
-.persona-badge {
-  font-size:.66rem; background:#21262d; color:#7d8590;
-  border:1px solid #3d444d; border-radius:3px;
-  padding:1px 6px; margin-left:4px; vertical-align:middle;
-}
+
+/* ── Tool result ─────────────────────────────────────── */
 .tool-result {
-  margin-top:8px; background:#0d1117; border:1px solid #3d444d;
-  border-radius:6px; padding:8px 12px; font-size:.78rem; color:#8b949e;
+  margin-top: 10px;
+  background: rgba(5,7,9,0.6);
+  border: 1px solid rgba(48,54,61,0.5);
+  border-left: 3px solid rgba(88,70,180,0.6);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px;
+  font-size: .78rem;
+  color: #8b949e;
 }
-.tool-result pre { margin:4px 0; white-space:pre-wrap; color:#79c0ff; }
+.tool-result pre {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  color: #79c0ff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .75rem;
+}
 
-/* ── Persona preview ───────────────────────────────── */
+/* ── Persona preview ─────────────────────────────────── */
 .persona-preview {
-  background:#161b22; border:1px solid #30363d;
-  border-radius:8px; padding:14px; color:#e6edf3;
-  font-size:.84rem; line-height:1.8;
+  background: rgba(22,27,34,0.7);
+  border: 1px solid rgba(48,54,61,0.6);
+  border-radius: 10px;
+  padding: 16px;
+  color: #e6edf3;
+  font-size: .85rem;
+  line-height: 1.9;
+  backdrop-filter: blur(6px);
+}
+.persona-preview code {
+  background: rgba(88,70,180,0.18);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #c084fc;
+  font-size: .8rem;
 }
 
-/* ── Mode badge ─────────────────────────────────── */
-.mode-discuss    { color:#3fb950; font-weight:700; }
-.mode-plan       { color:#d29922; font-weight:700; }
-.mode-autonomous { color:#f85149; font-weight:700; }
+/* ── Mode badges ─────────────────────────────────────── */
+.mode-discuss    { color: #3fb950; font-weight: 700; }
+.mode-plan       { color: #d29922; font-weight: 700; }
+.mode-autonomous { color: #f85149; font-weight: 700; }
 
-/* ── Org chart ──────────────────────────────────── */
+/* ── Org chart ───────────────────────────────────────── */
 .orgchart {
-  background:#161b22; border-radius:10px; padding:14px;
-  border:1px solid #30363d; font-size:.84rem;
+  background: rgba(22,27,34,0.5);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid rgba(48,54,61,0.5);
+  font-size: .84rem;
 }
 .orgchart .level {
-  display:flex; gap:10px; justify-content:center;
-  flex-wrap:wrap; margin:6px 0;
+  display: flex; gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap; margin: 7px 0;
 }
 .org-card {
-  background:#21262d; border:1px solid #3d444d;
-  border-radius:8px; padding:6px 14px; color:#e6edf3;
-  display:flex; align-items:center; gap:6px;
+  background: rgba(33,38,45,0.7);
+  border: 1px solid rgba(48,54,61,0.6);
+  border-radius: 10px;
+  padding: 8px 16px;
+  color: #e6edf3;
+  display: flex; align-items: center; gap: 8px;
+  transition: all .2s;
+}
+.org-card:hover {
+  border-color: rgba(167,139,250,0.4);
+  box-shadow: 0 0 12px rgba(167,139,250,0.1);
+}
+
+/* ── Scrollbar global ────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(88,70,180,0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(88,70,180,0.55);
+}
+
+/* ── Responsive ──────────────────────────────────────── */
+@media (max-width: 768px) {
+  .ag-bubble { max-width: 95vw; padding: 10px 12px; }
+  .ag-avatar { width: 34px; height: 34px; font-size: 16px; }
+  .ag-msg.reply { margin-left: 20px; }
 }
 """
 
@@ -401,16 +803,20 @@ def agent_panel(idx, default_name, default_role, default_pos, required, default_
             priorities_txt, blocked_txt, creativity, criticality, backstory)
 
 
-# ── Gradio layout ────────────────────────────────────────────
+# ── Gradio layout v5 ────────────────────────────────────────────
 
-with gr.Blocks(title="AgentGroup v4", theme=gr.themes.Base(), css=CSS) as demo:
-    gr.Markdown(
-        "# 🤖 AgentGroup v4\n"
-        "**Multi-AI Collaborative GitHub Editor** — "
-        "<span class='mode-discuss'>DISCUSS</span> / "
-        "<span class='mode-plan'>PLAN</span> / "
-        "<span class='mode-autonomous'>AUTONOMOUS</span> — "
-        "persona-aware · tool-use · session memory"
+with gr.Blocks(title="AgentGroup v5", theme=gr.themes.Base(), css=CSS) as demo:
+    gr.HTML(
+        "<div class='ag-header'>"
+        "<h1 style='margin:0;font-size:1.6rem;font-weight:700;color:#e6edf3;letter-spacing:-.02em'>"
+        "🤖 AgentGroup <span style='color:#a78bfa'>v5</span></h1>"
+        "<p style='margin:6px 0 0;color:#7d8590;font-size:.88rem'>"
+        "Multi-AI Collaborative GitHub Editor &nbsp;·&nbsp; "
+        "<span class='mode-discuss'>DISCUSS</span> &nbsp;/&nbsp; "
+        "<span class='mode-plan'>PLAN</span> &nbsp;/&nbsp; "
+        "<span class='mode-autonomous'>AUTONOMOUS</span> &nbsp;·&nbsp; "
+        "persona-aware &nbsp;·&nbsp; tool-use &nbsp;·&nbsp; session memory</p>"
+        "</div>"
     )
 
     with gr.Tabs():
@@ -463,7 +869,7 @@ with gr.Blocks(title="AgentGroup v4", theme=gr.themes.Base(), css=CSS) as demo:
                     tg_chat_id = gr.Textbox(label="Chat ID", placeholder="-1001234567890", scale=2)
 
         # ── TAB 2: Agents ─────────────────────────────────
-        with gr.Tab("🧑‍💼 Agents (2–6)"):
+        with gr.Tab("🧑\u200d💼 Agents (2–6)"):
             gr.Markdown(
                 "Configure **2 to 6 agents**. They speak in org-chart order.\n\n"
                 "Use **Load preset** to fill persona fields from `agents/*.json`, or edit manually.  "
@@ -495,8 +901,10 @@ with gr.Blocks(title="AgentGroup v4", theme=gr.themes.Base(), css=CSS) as demo:
 
             gr.Markdown("### 💬 Discussion Thread")
             chat_out = gr.HTML(
-                value="<div class='ag-chat'><p style='color:#484f58;text-align:center;padding:40px'>" \
-                      "🤖 Configure agents and press Start…</p></div>"
+                value="<div class='ag-chat'><p style='color:#484f58;text-align:center;padding:60px 40px'>"
+                      "<span style='font-size:2.5rem;display:block;margin-bottom:12px'>🤖</span>"
+                      "Configure your agents and press <strong style='color:#a78bfa'>Start</strong> to begin."
+                      "</p></div>"
             )
 
             with gr.Row():
