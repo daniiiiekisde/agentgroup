@@ -1,10 +1,28 @@
+# Core UI
 gradio>=4.0
+
+# LLM providers
 openai>=1.0
 anthropic>=0.20
 google-generativeai>=0.5
 groq>=0.4
-requests>=2.31
-python-dotenv>=1.0
 mistralai>=1.0
 cohere>=5.0
+
+# Live chat server (local mode)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# HTTP & config
+requests>=2.31
+python-dotenv>=1.0
+
+# Optional: web search tool
+# tavily-python>=0.3
+
+# Optional: charts
 plotly>=5.0
+
+# Testing
+pytest>=8.0
+pytest-asyncio>=0.23
